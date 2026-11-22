@@ -14,6 +14,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             git \
             bc \
@@ -30,7 +31,9 @@ jobs:
             wget \
             curl \
             gcc-aarch64-linux-gnu \
-            binutils-aarch64-linux-gnu
+            binutils-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabihf \
+            binutils-arm-linux-gnueabihf
 
       - name: Clone kernel source
         run: |
@@ -67,22 +70,53 @@ jobs:
         run: |
           export PATH="$HOME/toolchains/proton-clang/bin:$PATH"
 
+          echo "=== CLANG ==="
           clang --version
+
+          echo "=== LLD ==="
           ld.lld --version
+
+          echo "=== AARCH64 GCC ==="
           aarch64-linux-gnu-gcc --version
+
+          echo "=== ARM32 GCC ==="
+          arm-linux-gnueabihf-gcc --version
+
+          echo "=== AARCH64 BINUTILS ==="
+          aarch64-linux-gnu-ld --version | head -n 1
+
+          echo "=== ARM32 BINUTILS ==="
+          arm-linux-gnueabihf-ld --version | head -n 1
 
       - name: Configure kernel
         working-directory: kernel
         run: |
           export PATH="$HOME/toolchains/proton-clang/bin:$PATH"
 
-          make O="$GITHUB_WORKSPACE/out" \
+          make \
+            O="$GITHUB_WORKSPACE/out" \
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabihf- \
             CC=clang \
             LLVM=1 \
             LLVM_IAS=1 \
             certus_defconfig
+
+      - name: Verify kernel configuration
+        run: |
+          echo "=== CONFIG_COMPAT ==="
+          grep '^CONFIG_COMPAT=' out/.config || true
+
+          echo "=== CONFIG_VDSO32 ==="
+          grep '^CONFIG_VDSO32=' out/.config || true
+
+          echo "=== CONFIG_ARM64 ==="
+          grep '^CONFIG_ARM64=' out/.config || true
+
+          echo "=== TOOLCHAIN VARIABLES ==="
+          echo "CROSS_COMPILE=aarch64-linux-gnu-"
+          echo "CROSS_COMPILE_ARM32=arm-linux-gnueabihf-"
 
       - name: Build kernel
         working-directory: kernel
@@ -93,6 +127,7 @@ jobs:
             O="$GITHUB_WORKSPACE/out" \
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabihf- \
             CC=clang \
             LLVM=1 \
             LLVM_IAS=1
