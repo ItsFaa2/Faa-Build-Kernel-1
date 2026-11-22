@@ -1,0 +1,4 @@
+alias ll='ls -la'
+alias cls='clear'
+alias rrf='rm -rf'
+alias lh='ls -lah'
