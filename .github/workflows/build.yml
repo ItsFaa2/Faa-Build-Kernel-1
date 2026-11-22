@@ -1,0 +1,119 @@
+name: Build Linux 4.9.205
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout build repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git \
+            bc \
+            bison \
+            flex \
+            build-essential \
+            libssl-dev \
+            libelf-dev \
+            cpio \
+            zip \
+            unzip \
+            rsync \
+            python3 \
+            wget \
+            curl \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu
+
+      - name: Clone kernel source
+        run: |
+          git clone \
+            --depth=1 \
+            --branch lotus-4.9.205_oss-certus-arm64-20240419-15 \
+            https://github.com/xiaomi-mt6765-devs/android_kernel_xiaomi_mt6765.git \
+            kernel
+
+      - name: Verify kernel source
+        working-directory: kernel
+        run: |
+          echo "=== KERNEL VERSION ==="
+          make kernelversion
+
+          echo "=== GIT ==="
+          git rev-parse --short HEAD
+
+          echo "=== DEFCONFIG ==="
+          test -f arch/arm64/configs/certus_defconfig
+          echo "certus_defconfig: OK"
+
+      - name: Download Clang 13
+        run: |
+          mkdir -p "$HOME/toolchains"
+
+          git clone \
+            --depth=1 \
+            --branch 20210522 \
+            https://github.com/kdrag0n/proton-clang.git \
+            "$HOME/toolchains/proton-clang"
+
+      - name: Verify toolchain
+        run: |
+          export PATH="$HOME/toolchains/proton-clang/bin:$PATH"
+
+          clang --version
+          ld.lld --version
+          aarch64-linux-gnu-gcc --version
+
+      - name: Configure kernel
+        working-directory: kernel
+        run: |
+          export PATH="$HOME/toolchains/proton-clang/bin:$PATH"
+
+          make O="$GITHUB_WORKSPACE/out" \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC=clang \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            certus_defconfig
+
+      - name: Build kernel
+        working-directory: kernel
+        run: |
+          export PATH="$HOME/toolchains/proton-clang/bin:$PATH"
+
+          make -j"$(nproc)" \
+            O="$GITHUB_WORKSPACE/out" \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC=clang \
+            LLVM=1 \
+            LLVM_IAS=1
+
+      - name: Collect build artifacts
+        run: |
+          mkdir -p artifacts
+
+          cp out/.config artifacts/
+          cp out/System.map artifacts/ 2>/dev/null || true
+          cp out/vmlinux artifacts/ 2>/dev/null || true
+          cp out/arch/arm64/boot/Image artifacts/ 2>/dev/null || true
+          cp out/arch/arm64/boot/Image.gz artifacts/ 2>/dev/null || true
+          cp out/arch/arm64/boot/Image.gz-dtb artifacts/ 2>/dev/null || true
+
+          echo "=== ARTIFACTS ==="
+          find artifacts -type f -exec ls -lh {} \;
+
+      - name: Upload kernel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-4.9.205-baseline
+          path: artifacts/
+          if-no-files-found: error
